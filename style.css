@@ -1,0 +1,243 @@
+:root {
+  --bg-glass: rgba(255, 255, 255, 0.78);
+  --bg-glass-strong: rgba(255, 255, 255, 0.94);
+  --text-primary: #1b2620;
+  --text-secondary: #3f5247;
+  --accent: #27593d;
+  --accent-hover: #1d442e;
+  --border-subtle: rgba(27, 38, 32, 0.12);
+  --shadow-soft: 0 8px 24px rgba(15, 26, 20, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text-primary);
+  background-color: #dfe5e1;
+  touch-action: none; /* Evita pull-to-refresh e scroll ao rotacionar o modelo */
+  user-select: none;
+}
+
+/* Garante que nenhum botão nativo de VR/AR do A-Frame apareça */
+.a-enter-vr,
+.a-enter-ar,
+.a-orientation-modal {
+  display: none !important;
+}
+
+/* Topo: Título e Espécie */
+.hud-top {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  left: 16px;
+  right: 68px; /* Espaço livre para o botão 'i' no canto direito */
+  z-index: 10;
+  pointer-events: none;
+}
+
+.app-title {
+  font-size: clamp(1.1rem, 4.2vw, 1.45rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-primary);
+  text-shadow: 0 1px 8px rgba(255, 255, 255, 0.75);
+}
+
+.species-subtitle {
+  margin-top: 4px;
+  font-size: clamp(0.88rem, 3.4vw, 1.02rem);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  text-shadow: 0 1px 6px rgba(255, 255, 255, 0.8);
+}
+
+/* Botões circulares base */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--text-primary);
+  border-radius: 50%;
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.15s ease, background-color 0.2s ease;
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+  background: var(--bg-glass-strong);
+}
+
+/* Botão de Informação (canto direito) */
+.info-btn {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  z-index: 15;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+
+/* Navegação Inferior */
+.hud-bottom {
+  position: fixed;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  pointer-events: none;
+}
+
+.nav-btn {
+  width: 54px;
+  height: 54px;
+}
+
+.model-counter {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+/* Loader */
+.loader-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border-radius: 16px;
+  background: var(--bg-glass-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.loader-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(39, 89, 61, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.85s linear infinite;
+}
+
+#loader-text {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Modal de Informações */
+.info-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 24, 19, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 1;
+  transition: opacity 0.25s ease;
+  pointer-events: auto;
+}
+
+.info-modal.hidden {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.info-card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--bg-glass-strong);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+  user-select: text;
+}
+
+.info-card h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.info-text {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-bottom: 22px;
+}
+
+.close-btn {
+  width: 100%;
+  padding: 13px 18px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.15s ease;
+}
+
+.close-btn:active {
+  background: var(--accent-hover);
+  transform: scale(0.98);
+}

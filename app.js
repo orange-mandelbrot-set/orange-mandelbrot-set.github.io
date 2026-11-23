@@ -91,10 +91,10 @@ const PLANT_MODELS = [
 ];
 
 const AUTO_ROTATE_RESUME_DELAY_MS = 5000;
+const SWITCH_DEBOUNCE_MS = 180;
 
 /**
  * Componente A-Frame para carregar iluminação PBR via arquivo .hdr (Radiance RGBE)
- * sem dependências externas conflitantes.
  */
 AFRAME.registerComponent('hdr-environment', {
   schema: {
@@ -148,7 +148,6 @@ AFRAME.registerComponent('hdr-environment', {
   },
 
   applyFallbackLighting() {
-    // Luz hemisférica reserva caso o arquivo .hdr ainda não esteja na pasta
     const hemiLight = new THREE.HemisphereLight(0xf4f8ff, 0x6b6356, 1.35);
     this.el.sceneEl.object3D.add(hemiLight);
   },
@@ -167,7 +166,6 @@ AFRAME.registerComponent('hdr-environment', {
       return line;
     };
 
-    // Cabeçalho Radiance
     let line = readLine();
     if (!line.startsWith('#?')) {
       throw new Error('Cabeçalho RGBE inválido');
@@ -178,7 +176,6 @@ AFRAME.registerComponent('hdr-environment', {
       if (line.trim() === '') break;
     }
 
-    // Dimensões (-Y height +X width)
     const dimLine = readLine().trim();
     const match = dimLine.match(/-Y\s+(\d+)\s+\+X\s+(\d+)/);
     if (!match) {
@@ -188,11 +185,9 @@ AFRAME.registerComponent('hdr-environment', {
     const height = parseInt(match[1], 10);
     const width = parseInt(match[2], 10);
     const data = new Uint16Array(width * height * 4);
-
     const scanline = new Uint8Array(width * 4);
 
     for (let y = 0; y < height; y++) {
-      // Verifica RLE padrão (2, 2, widthHigh, widthLow)
       if (
         bytes[pos] === 2 &&
         bytes[pos + 1] === 2 &&
@@ -219,7 +214,6 @@ AFRAME.registerComponent('hdr-environment', {
           }
         }
       } else {
-        // Sem RLE
         for (let x = 0; x < width; x++) {
           scanline[x * 4] = bytes[pos++];
           scanline[x * 4 + 1] = bytes[pos++];
@@ -228,7 +222,6 @@ AFRAME.registerComponent('hdr-environment', {
         }
       }
 
-      // Converte RGBE -> Linear Float -> HalfFloat (compatível com Three.js r164 PMREM)
       const rowOffset = (height - 1 - y) * width * 4;
       for (let x = 0; x < width; x++) {
         const sIdx = x * 4;
@@ -279,22 +272,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const infoModal = document.getElementById('info-modal');
 
   let currentIndex = 0;
-  let activeModelEl = null;
   let loadToken = 0;
+  let switchDebounceTimer = null;
   let autoRotateTimer = null;
 
-  // Limita Pixel Ratio em telas mobile 3x/4x para manter 60fps constantes
   sceneEl.addEventListener('loaded', () => {
     if (sceneEl.renderer) {
       sceneEl.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     }
     setupAutoRotateResume();
-    loadPlant(0);
+    loadPlant(0, true);
   });
 
-  /**
-   * Pausa auto-rotação durante toque/arraste e retoma após 5 segundos
-   */
   function setupAutoRotateResume() {
     const orbitComp = cameraEl.components['orbit-controls'];
     if (!orbitComp || !orbitComp.controls) return;
@@ -323,12 +312,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Libera completamente geometrias, materiais e texturas KTX2 da GPU/RAM
+   * Descarta uma entidade específica (geometrias, materiais e texturas KTX2)
+   * de forma isolada, sem afetar o restante da cena.
    */
-  function disposeCurrentModel() {
-    if (!activeModelEl) return;
+  function disposeEntity(entityEl) {
+    if (!entityEl) return;
 
-    const meshRoot = activeModelEl.getObject3D('mesh');
+    const meshRoot = entityEl.getObject3D('mesh');
     if (meshRoot) {
       meshRoot.traverse((node) => {
         if (node.isMesh) {
@@ -338,7 +328,6 @@ document.addEventListener('DOMContentLoaded', () => {
           if (node.material) {
             const materials = Array.isArray(node.material) ? node.material : [node.material];
             materials.forEach((mat) => {
-              // Descarta todos os mapas PBR (albedo, normal, roughness, AO, etc.)
               for (const key of Object.keys(mat)) {
                 const value = mat[key];
                 if (value && typeof value === 'object' && value.isTexture) {
@@ -352,10 +341,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    if (activeModelEl.parentNode) {
-      activeModelEl.parentNode.removeChild(activeModelEl);
+    if (entityEl.parentNode) {
+      entityEl.parentNode.removeChild(entityEl);
     }
-    activeModelEl = null;
 
     if (sceneEl.renderer && sceneEl.renderer.renderLists) {
       sceneEl.renderer.renderLists.dispose();
@@ -363,20 +351,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Carrega o modelo 3D selecionado sob demanda
+   * Garante que o container esteja 100% vazio antes de inserir o próximo modelo
    */
-  function loadPlant(index) {
+  function clearPlantContainer(exceptEl = null) {
+    const children = Array.from(plantContainer.children);
+    children.forEach((child) => {
+      if (child !== exceptEl) {
+        disposeEntity(child);
+      }
+    });
+  }
+
+  /**
+   * Seleciona e carrega a planta desejada, cancelando qualquer carregamento obsoleto
+   */
+  function loadPlant(index, immediate = false) {
     currentIndex = (index + PLANT_MODELS.length) % PLANT_MODELS.length;
     const plant = PLANT_MODELS[currentIndex];
+
+    // Invalida imediatamente qualquer carregamento anterior em andamento
     const currentToken = ++loadToken;
 
-    // Atualiza textos imediatamente
+    // Atualiza HUD na hora para resposta tátil imediata
     speciesNameEl.innerHTML = plant.label;
     counterEl.textContent = `${currentIndex + 1} / ${PLANT_MODELS.length}`;
-
-    // Exibe loader
     loaderText.textContent = `Carregando modelo ${currentIndex + 1}/12...`;
     loaderOverlay.classList.remove('hidden');
+
+    // Remove imediatamente o modelo que estava na tela
+    clearPlantContainer();
 
     // Ajusta altura alvo da câmera conforme a planta
     const orbitComp = cameraEl.components['orbit-controls'];
@@ -385,61 +388,79 @@ document.addEventListener('DOMContentLoaded', () => {
       orbitComp.controls.update();
     }
 
-    // Libera o modelo anterior antes de instanciar o novo
-    disposeCurrentModel();
+    if (switchDebounceTimer) {
+      clearTimeout(switchDebounceTimer);
+      switchDebounceTimer = null;
+    }
 
-    const newModelEl = document.createElement('a-entity');
-    newModelEl.setAttribute('gltf-model', plant.file);
-    newModelEl.setAttribute('scale', `${plant.scale} ${plant.scale} ${plant.scale}`);
-    newModelEl.setAttribute('position', '0 0 0');
-
-    newModelEl.addEventListener('model-loaded', () => {
-      // Ignora caso o usuário já tenha trocado de modelo durante o download
-      if (currentToken !== loadToken) {
-        activeModelEl = newModelEl;
-        disposeCurrentModel();
-        return;
-      }
-
-      const mesh = newModelEl.getObject3D('mesh');
-      if (mesh) {
-        mesh.traverse((node) => {
-          if (node.isMesh) {
-            node.castShadow = true;
-            node.receiveShadow = true;
-            // Garante atualização do environment map PBR
-            if (node.material) {
-              const materials = Array.isArray(node.material) ? node.material : [node.material];
-              materials.forEach((mat) => {
-                mat.side = THREE.DoubleSide; // Renderiza frente e verso das folhas
-                mat.shadowSide = THREE.FrontSide;
-
-                // Corrige a ordenação de profundidade (Z-depth) das folhas
-                if (mat.transparent || mat.alphaMap) {
-                  mat.transparent = false; // Desativa Alpha Blend
-                  mat.alphaTest = 0.5;     // Ativa Alpha Cutout (recorte via Z-buffer)
-                  mat.depthWrite = true;   // Grava profundidade real por pixel
-                }
-
-                mat.envMapIntensity = 1.0;
-                mat.needsUpdate = true;
-              });
-            }
-          }
-        });
-      }
-
-      loaderOverlay.classList.add('hidden');
-    });
-
-    newModelEl.addEventListener('model-error', (err) => {
+    const startLoadingModel = () => {
+      // Se o usuário já clicou em outro modelo durante o debounce, aborta
       if (currentToken !== loadToken) return;
-      console.error(`Erro ao carregar ${plant.file}:`, err);
-      loaderText.textContent = `Arquivo não encontrado: ${plant.file}`;
-    });
 
-    activeModelEl = newModelEl;
-    plantContainer.appendChild(newModelEl);
+      clearPlantContainer();
+
+      const newModelEl = document.createElement('a-entity');
+      newModelEl.setAttribute('gltf-model', plant.file);
+      newModelEl.setAttribute('scale', `${plant.scale} ${plant.scale} ${plant.scale}`);
+      newModelEl.setAttribute('position', '0 0 0');
+
+      newModelEl.addEventListener('model-loaded', () => {
+        // Se este carregamento ficou obsoleto enquanto baixava/decodificava, descarta só ele
+        if (currentToken !== loadToken) {
+          disposeEntity(newModelEl);
+          return;
+        }
+
+        // Garante que nenhuma outra entidade sobrou no container
+        clearPlantContainer(newModelEl);
+
+        const mesh = newModelEl.getObject3D('mesh');
+        if (mesh) {
+          mesh.traverse((node) => {
+            if (node.isMesh) {
+              node.castShadow = true;
+              node.receiveShadow = true;
+
+              if (node.material) {
+                const materials = Array.isArray(node.material) ? node.material : [node.material];
+                materials.forEach((mat) => {
+                  mat.side = THREE.DoubleSide;
+                  mat.shadowSide = THREE.FrontSide;
+
+                  if (mat.transparent || mat.alphaMap) {
+                    mat.transparent = false;
+                    mat.alphaTest = 0.5;
+                    mat.depthWrite = true;
+                  }
+
+                  mat.envMapIntensity = 1.0;
+                  mat.needsUpdate = true;
+                });
+              }
+            }
+          });
+        }
+
+        loaderOverlay.classList.add('hidden');
+      }, { once: true });
+
+      newModelEl.addEventListener('model-error', (err) => {
+        if (currentToken !== loadToken) {
+          disposeEntity(newModelEl);
+          return;
+        }
+        console.error(`Erro ao carregar ${plant.file}:`, err);
+        loaderText.textContent = `Arquivo não encontrado: ${plant.file}`;
+      }, { once: true });
+
+      plantContainer.appendChild(newModelEl);
+    };
+
+    if (immediate) {
+      startLoadingModel();
+    } else {
+      switchDebounceTimer = setTimeout(startLoadingModel, SWITCH_DEBOUNCE_MS);
+    }
   }
 
   // Navegação por setas
@@ -455,14 +476,13 @@ document.addEventListener('DOMContentLoaded', () => {
     infoModal.classList.add('hidden');
   });
 
-  // Fechar modal tocando fora do cartão
   infoModal.addEventListener('click', (e) => {
     if (e.target === infoModal) {
       infoModal.classList.add('hidden');
     }
   });
 
-  // Atalhos de teclado (útil para testes no desktop)
+  // Atalhos de teclado
   window.addEventListener('keydown', (e) => {
     if (!infoModal.classList.contains('hidden')) {
       if (e.key === 'Escape') infoModal.classList.add('hidden');

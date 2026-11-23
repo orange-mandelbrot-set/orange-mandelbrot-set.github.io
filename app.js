@@ -15,7 +15,7 @@ const PLANT_MODELS = [
     id: 2,
     label: '<em>Aechmea nudicaulis</em>',
     file: './assets/models/modelo2.glb',
-    scale: 1.5,
+    scale: 1.8,
     targetY: 0.6
   },
   {
@@ -78,7 +78,7 @@ const PLANT_MODELS = [
     id: 11,
     label: 'Erva-da-fortuna (<em>Tradescantia fluminensis</em>)',
     file: './assets/models/modelo11.glb',
-    scale: 1.0,
+    scale: 0.08,
     targetY: 0.35
   },
   {
